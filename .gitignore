@@ -34,3 +34,9 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# Vercel
+.vercel/
+
+
+
+.vercel

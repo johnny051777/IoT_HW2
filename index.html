@@ -18,14 +18,17 @@
           </svg>
         </div>
         <div class="logo-text">
-          <h1 class="logo-title">HydroPredict AI</h1>
-          <span class="logo-subtitle">線性回歸・特徵選擇・95% 信賴/預測區間互動工作台</span>
+          <h1 class="logo-title" id="app-main-title">ML Predictor Studio</h1>
+          <span class="logo-subtitle" id="app-main-subtitle">線性回歸・特徵選擇・95% 信賴/預測區間・多資料集工作台</span>
         </div>
       </div>
       <div class="header-actions">
         <span class="badge badge-pulse" id="dataset-status-badge">
           <span class="status-dot"></span> 基準水文資料集 (5,000 筆)
         </span>
+        <a href="https://www.kaggle.com/competitions/i3-ml-21-22-mini-project" target="_blank" rel="noopener" class="problem-badge-link" id="link-kaggle-header" style="display:none;">
+          🏆 Kaggle 競賽專頁
+        </a>
         <button class="btn btn-outline" id="btn-export-report" onclick="exportAnalysisReport()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -40,12 +43,50 @@
 
   <!-- Main Container -->
   <main class="main-content">
+    <!-- Dataset & Problem Selector Bar -->
+    <section class="dataset-control-bar glass-panel">
+      <div class="dataset-control-top">
+        <div class="problem-dropdown-wrap">
+          <label for="problem-select" class="dropdown-label">
+            <span>📊 分析題目 / 資料集 (Problem):</span>
+          </label>
+          <select id="problem-select" class="styled-select" onchange="handleProblemChange(this.value)">
+            <option value="flood" selected>🌊 洪水機率預測 (CRISP-DM Flood Prediction)</option>
+            <option value="swiss">🏔️ 瑞士房價預測 (Swiss Housing Price - Kaggle i3-ml-21-22)</option>
+            <option value="custom">🌐 外部任意資料集 (Remote CSV URL / Upload)</option>
+          </select>
+        </div>
+
+        <div class="url-input-wrap">
+          <input type="text" id="dataset-url-input" class="url-input" 
+                 placeholder="輸入任意 CSV URL (例如 https://raw.githubusercontent.com/Avik-Jain/100-Days-Of-ML-Code/master/datasets/50_Startups.csv)">
+          <button class="btn btn-primary btn-sm" id="btn-load-url" onclick="loadDatasetFromUrl()">
+            載入 URL
+          </button>
+        </div>
+
+        <div class="target-select-wrap">
+          <label for="target-var-select" class="dropdown-label" style="font-size: 13px;">目標變數 (Target):</label>
+          <select id="target-var-select" class="styled-select" style="font-size: 13px; padding: 4px 10px;" onchange="handleTargetVariableChange(this.value)">
+            <option value="FloodProbability">FloodProbability</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="quick-chips-wrap">
+        <span class="chip-label">快捷資料集切換：</span>
+        <button class="chip-btn active" id="chip-preset-flood" onclick="quickLoadPreset('flood')">🌊 基準水文洪水 (5,000筆)</button>
+        <button class="chip-btn" id="chip-preset-swiss" onclick="quickLoadPreset('swiss')">🏔️ 瑞士房價 Kaggle (1,200筆)</button>
+        <button class="chip-btn" id="chip-preset-startups" onclick="quickLoadPreset('startups')">🚀 50_Startups.csv (Avik-Jain)</button>
+      </div>
+    </section>
+
     <!-- Top KPI Cards -->
     <section class="kpi-grid">
       <div class="kpi-card glass-panel" id="kpi-card-r2">
         <div class="kpi-label">最佳決定係數 (R²)</div>
         <div class="kpi-value text-cyan" id="kpi-r2">0.9207</div>
-        <div class="kpi-subtext">多元線性回歸 (全特徵)</div>
+        <div class="kpi-subtext" id="kpi-r2-sub">多元線性回歸 (全特徵)</div>
       </div>
       <div class="kpi-card glass-panel" id="kpi-card-rmse">
         <div class="kpi-label">均方根誤差 (RMSE)</div>
@@ -296,17 +337,14 @@
     <section class="tab-pane" id="pane-simulator">
       <div class="pane-header-box">
         <div class="pane-title-group">
-          <h2 class="pane-title">即時洪水機率預測模擬器 (Real-time What-If Predictor)</h2>
-          <p class="pane-desc">
-            微調各項水文、地形、基礎設施與氣候變遷指標，即時推算預測洪水發生機率，並同步輸出 <strong>95% 信賴區間</strong> (針對此條件之期望機率) 與 <strong>95% 預測區間</strong> (針對特定觀測之單一樣本機率)。
+          <h2 class="pane-title" id="sim-pane-title">即時機率與數值預測模擬器 (Real-time What-If Predictor)</h2>
+          <p class="pane-desc" id="sim-pane-desc">
+            微調自變數指標，即時推算模型預測值，並同步輸出 <strong>95% 信賴區間</strong> (母體條件期望估計) 與 <strong>95% 預測區間</strong> (個別事件波動範圍)。
           </p>
         </div>
-        <div class="control-row">
+        <div class="control-row" id="scenario-presets-container">
           <span class="text-muted">情境快選：</span>
-          <button class="chip-btn" id="scenario-normal" onclick="applyScenarioPreset('normal')">正常平水情境</button>
-          <button class="chip-btn" id="scenario-typhoon" onclick="applyScenarioPreset('typhoon')">極端暴雨與山崩警報</button>
-          <button class="chip-btn" id="scenario-urban" onclick="applyScenarioPreset('urban')">都市高度開發排水不良</button>
-          <button class="chip-btn" id="scenario-good" onclick="applyScenarioPreset('good')">水利設施完備防汛情境</button>
+          <button class="chip-btn" id="scenario-normal" onclick="applyScenarioPreset('normal')">正常情境</button>
           <button class="btn btn-outline btn-sm" id="btn-reset-sliders" onclick="resetSimulatorSliders()">重置滑桿</button>
         </div>
       </div>
@@ -320,7 +358,7 @@
             <div class="gauge-circle" id="gauge-circle-elem">
               <div class="gauge-inner">
                 <span class="gauge-percent" id="sim-predicted-prob">53.4%</span>
-                <span class="gauge-sublabel">預估洪水機率</span>
+                <span class="gauge-sublabel" id="sim-gauge-sublabel">預估數值</span>
               </div>
             </div>
             <div class="risk-badge" id="sim-risk-badge">中度警戒 (Moderate Risk)</div>
@@ -333,7 +371,7 @@
                 <strong>信賴區間 (母體期望值)</strong>
               </div>
               <div class="interval-range" id="sim-ci-range">[52.1% ~ 54.7%]</div>
-              <div class="interval-explanation">平均洪水發生機率有 95% 機率落在此帶內</div>
+              <div class="interval-explanation" id="sim-ci-exp">平均期望數值有 95% 機率落在此帶內</div>
             </div>
 
             <div class="interval-card pi-card">
@@ -342,18 +380,18 @@
                 <strong>預測區間 (單一事件值)</strong>
               </div>
               <div class="interval-range" id="sim-pi-range">[44.8% ~ 62.0%]</div>
-              <div class="interval-explanation">單次實地觀測數值預期有 95% 機率落在此帶內</div>
+              <div class="interval-explanation" id="sim-pi-exp">單次實地觀測數值預期有 95% 機率落在此帶內</div>
             </div>
           </div>
 
           <div class="model-in-use-note">
-            <span>使用模型：</span><strong id="sim-active-model-name">多元線性回歸 (特徵選擇 Top 10)</strong>
+            <span>使用模型：</span><strong id="sim-active-model-name">多元線性回歸</strong>
           </div>
         </div>
 
         <!-- Parameter Controls Grid -->
         <div class="card glass-panel simulator-inputs-card">
-          <h3 class="card-title">特徵因子滑桿調節盤 (數值範圍 1 ~ 15)</h3>
+          <h3 class="card-title" id="sim-sliders-title">特徵因子滑桿調節盤</h3>
           <div class="sliders-scroll-container" id="simulator-sliders-container">
             <!-- Dynamically populated sliders -->
           </div>
@@ -367,10 +405,27 @@
     <section class="tab-pane" id="pane-gallery">
       <div class="pane-header-box">
         <div class="pane-title-group">
-          <h2 class="pane-title">Python Matplotlib 分析圖表總覽</h2>
+          <h2 class="pane-title">Python Matplotlib 分析圖表總覽與問題架構介紹</h2>
           <p class="pane-desc">
-            由 <code>main.py</code> 統計分析管道所產製的高解析圖表，涵蓋單純線性回歸、多元回歸帶狀區間、時序自回歸外推及殘差分佈檢驗。
+            整合 CRISP-DM 洪水回歸分析流程與 Kaggle 瑞士房價競賽資料集架構。點擊任意縮圖即可開啟高解析燈箱檢視。
           </p>
+        </div>
+      </div>
+
+      <!-- Swiss Housing Kaggle Feature Card -->
+      <div class="card glass-panel" style="margin-bottom: 24px; border-left: 4px solid #38bdf8;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;">
+          <div>
+            <h3 style="font-size: 17px; font-weight: 700; color: #38bdf8; margin-bottom: 6px;">
+              🏔️ Kaggle Competition: Swiss Housing Price Prediction (i3-ml-21-22-mini-project)
+            </h3>
+            <p style="color: var(--text-muted); font-size: 13.5px; max-width: 900px; line-height: 1.6;">
+              本資料集源自瑞士機器學習競賽，透過 11 項關鍵房地產維度（居住面積 <code>LivingSpace</code>、房間數 <code>Rooms</code>、衛浴數 <code>Bathrooms</code>、樓層 <code>Floor</code>、屋齡 <code>YearBuilt</code>、市中心距離 <code>DistanceCityCenter</code>、陽台 <code>HasBalcony</code>、停車位 <code>ParkingSpaces</code>、山景指數 <code>MountainViewScore</code>、能源評級 <code>EnergyEfficiency</code>、稅率係數 <code>TaxMultiplier</code>）建立多元線性回歸模型，精準估算瑞士法郎售價 <code>PriceCHF</code>，並推導 95% 信賴區間與預測區間。
+            </p>
+          </div>
+          <a href="https://www.kaggle.com/competitions/i3-ml-21-22-mini-project" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
+            🔗 開啟 Kaggle 競賽專頁
+          </a>
         </div>
       </div>
 
@@ -411,7 +466,7 @@
           </div>
           <div class="gallery-info">
             <h4 class="gallery-title">圖 4：特徵選擇 F-Score 統計檢定排行</h4>
-            <p class="gallery-desc">依 F-Statistic 由大至小排序，標示入選 Top 10 之關鍵環境因子。</p>
+            <p class="gallery-desc">依 F-Statistic 由大至小排序，標示入選關鍵環境與房產因子。</p>
           </div>
         </div>
 
@@ -443,9 +498,9 @@
     <section class="tab-pane" id="pane-data">
       <div class="pane-header-box">
         <div class="pane-title-group">
-          <h2 class="pane-title">水文資料中心與自訂 CSV 上傳 (Data Hub)</h2>
-          <p class="pane-desc">
-            預覽基準資料集前 100 筆紀錄，或點擊下方按鈕上傳您自己的水文觀測 CSV 檔案進行即時分析與重算。
+          <h2 class="pane-title" id="data-hub-title">資料中心與自訂 CSV / 遠端 URL (Data Hub)</h2>
+          <p class="pane-desc" id="data-hub-desc">
+            預覽當前資料集觀測紀錄，支援上傳自訂本機 CSV 或直接輸入遠端 CSV URL 進行即時模型訓練與預測區間推算。
           </p>
         </div>
         <div class="control-row">
@@ -458,8 +513,11 @@
             上傳自訂 CSV 檔案
           </label>
           <input type="file" id="csv-file-input" accept=".csv" style="display:none;" onchange="handleCsvUpload(event)">
+          <button class="btn btn-outline" onclick="downloadCurrentDatasetCsv()">
+            下載當前 CSV
+          </button>
           <button class="btn btn-primary" id="btn-download-submission" onclick="downloadSubmissionCsv()">
-            下載 Kaggle submission.csv
+            下載 Kaggle 洪水 submission.csv
           </button>
         </div>
       </div>
