@@ -1,0 +1,181 @@
+{
+  "dataset_info": {
+    "train_rows": 5000,
+    "test_rows": 1000,
+    "features_count": 20,
+    "target": "FloodProbability",
+    "features": [
+      "MonsoonIntensity",
+      "TopographyDrainage",
+      "RiverManagement",
+      "Deforestation",
+      "Urbanization",
+      "ClimateChange",
+      "DamsQuality",
+      "Siltation",
+      "AgriculturalPractices",
+      "Encroachments",
+      "IneffectiveDisasterPreparedness",
+      "DrainageSystems",
+      "CoastalVulnerability",
+      "Landslides",
+      "Watersheds",
+      "DeterioratingInfrastructure",
+      "PopulationScore",
+      "WetlandLoss",
+      "InadequatePlanning",
+      "PoliticalFactors"
+    ]
+  },
+  "feature_selection": {
+    "ranked_features": [
+      "Landslides",
+      "Deforestation",
+      "DrainageSystems",
+      "RiverManagement",
+      "TopographyDrainage",
+      "DamsQuality",
+      "Urbanization",
+      "PoliticalFactors",
+      "Encroachments",
+      "Siltation",
+      "CoastalVulnerability",
+      "AgriculturalPractices",
+      "IneffectiveDisasterPreparedness",
+      "InadequatePlanning",
+      "Watersheds",
+      "DeterioratingInfrastructure",
+      "MonsoonIntensity",
+      "WetlandLoss",
+      "PopulationScore",
+      "ClimateChange"
+    ],
+    "f_scores": {
+      "Landslides": 296.2941780127737,
+      "Deforestation": 294.80816853494105,
+      "DrainageSystems": 272.22199933138126,
+      "RiverManagement": 268.73652482367214,
+      "TopographyDrainage": 249.59725384346248,
+      "DamsQuality": 246.31506753925143,
+      "Urbanization": 222.8308513775963,
+      "PoliticalFactors": 219.89331956268572,
+      "Encroachments": 219.2455263457167,
+      "Siltation": 206.79394734911057,
+      "CoastalVulnerability": 206.75366349724612,
+      "AgriculturalPractices": 203.79022769797734,
+      "IneffectiveDisasterPreparedness": 194.21083818186833,
+      "InadequatePlanning": 158.72169780539906,
+      "Watersheds": 156.98350331019194,
+      "DeterioratingInfrastructure": 136.2782199059764,
+      "MonsoonIntensity": 132.7011018584377,
+      "WetlandLoss": 121.67517397576351,
+      "PopulationScore": 111.51636579131696,
+      "ClimateChange": 98.60596601242742
+    },
+    "pearson_corr": {
+      "Landslides": 0.2626731383057207,
+      "Deforestation": 0.2620589614271281,
+      "DrainageSystems": 0.2524854655848475,
+      "RiverManagement": 0.25096631600010894,
+      "TopographyDrainage": 0.2424087185296043,
+      "DamsQuality": 0.24090270799731334,
+      "Urbanization": 0.2297675459043576,
+      "PoliticalFactors": 0.2283275003399492,
+      "Encroachments": 0.22800844205078527,
+      "Siltation": 0.22176681153424654,
+      "CoastalVulnerability": 0.22174627240311393,
+      "AgriculturalPractices": 0.22022899348790065,
+      "IneffectiveDisasterPreparedness": 0.21523612919085636,
+      "InadequatePlanning": 0.19540815127310926,
+      "Watersheds": 0.19437587279511345,
+      "DeterioratingInfrastructure": 0.18155715816080586,
+      "MonsoonIntensity": 0.1792360561310723,
+      "WetlandLoss": 0.17185790003702325,
+      "PopulationScore": 0.1647304734811395,
+      "ClimateChange": 0.15514561292278342
+    },
+    "selected_top10": [
+      "Landslides",
+      "Deforestation",
+      "DrainageSystems",
+      "RiverManagement",
+      "TopographyDrainage",
+      "DamsQuality",
+      "Urbanization",
+      "PoliticalFactors",
+      "Encroachments",
+      "Siltation"
+    ],
+    "best_single": "Landslides"
+  },
+  "model_comparison": [
+    {
+      "Model": "單純線性回歸 (Simple LR)",
+      "MAE": 0.04180683714587747,
+      "MSE": 0.0027901533363648805,
+      "RMSE": 0.05282190205175198,
+      "R2": 0.04701093609698803,
+      "Adj_R2": 0.04605603723536167
+    },
+    {
+      "Model": "多元線性回歸 - 全特徵 (MLR All 20)",
+      "MAE": 0.012132333966169365,
+      "MSE": 0.00023208670188378728,
+      "RMSE": 0.01523439207463781,
+      "R2": 0.9207297728444113,
+      "Adj_R2": 0.9191103606451142
+    },
+    {
+      "Model": "多元線性回歸 - 特徵選擇 (MLR Top 10)",
+      "MAE": 0.029470931749285063,
+      "MSE": 0.0013693228451984792,
+      "RMSE": 0.0370043625157694,
+      "R2": 0.5323017988226961,
+      "Adj_R2": 0.5275727977996698
+    },
+    {
+      "Model": "自回歸模型 (Auto Regression AR(3))",
+      "MAE": 0.04271765348016892,
+      "MSE": 0.0029279202426365663,
+      "RMSE": 0.05411026004961135,
+      "R2": -4.395272704971198e-05,
+      "Adj_R2": -0.003056133307552944
+    }
+  ],
+  "simple_lr_params": {
+    "feature": "Landslides",
+    "intercept": 0.5200691055900254,
+    "coef": 0.006270795031702815,
+    "r2": 0.04701093609698803,
+    "rmse": 0.05282190205175198
+  },
+  "multi_lr_params": {
+    "intercept": 0.23347462573112554,
+    "coefs": {
+      "Landslides": 0.005739332073322487,
+      "Deforestation": 0.005975806150979401,
+      "DrainageSystems": 0.006121905397054893,
+      "RiverManagement": 0.005673281608012226,
+      "TopographyDrainage": 0.005920561064141011,
+      "DamsQuality": 0.0051479996387167395,
+      "Urbanization": 0.0050953602801625895,
+      "PoliticalFactors": 0.005860495259810011,
+      "Encroachments": 0.0054673536675046985,
+      "Siltation": 0.004813120831633928
+    },
+    "features": [
+      "Landslides",
+      "Deforestation",
+      "DrainageSystems",
+      "RiverManagement",
+      "TopographyDrainage",
+      "DamsQuality",
+      "Urbanization",
+      "PoliticalFactors",
+      "Encroachments",
+      "Siltation"
+    ],
+    "r2": 0.5323017988226961,
+    "rmse": 0.0370043625157694
+  }
+}

@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HydroPredict AI | 洪水機率回歸分析與互動預測工作台</title>
+  <meta name="description" content="使用線性回歸模型、特徵選擇與模型評估進行洪水機率預測，提供 95% 信賴區間與預測區間之互動式分析平台。">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header / Navigation -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="logo-group">
+        <div class="logo-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <h1 class="logo-title">HydroPredict AI</h1>
+          <span class="logo-subtitle">線性回歸・特徵選擇・95% 信賴/預測區間互動工作台</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="badge badge-pulse" id="dataset-status-badge">
+          <span class="status-dot"></span> 基準水文資料集 (5,000 筆)
+        </span>
+        <button class="btn btn-outline" id="btn-export-report" onclick="exportAnalysisReport()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          導出分析報告
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-content">
+    <!-- Top KPI Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card glass-panel" id="kpi-card-r2">
+        <div class="kpi-label">最佳決定係數 (R²)</div>
+        <div class="kpi-value text-cyan" id="kpi-r2">0.9207</div>
+        <div class="kpi-subtext">多元線性回歸 (全特徵)</div>
+      </div>
+      <div class="kpi-card glass-panel" id="kpi-card-rmse">
+        <div class="kpi-label">均方根誤差 (RMSE)</div>
+        <div class="kpi-value text-emerald" id="kpi-rmse">0.0152</div>
+        <div class="kpi-subtext">預測標準差精度</div>
+      </div>
+      <div class="kpi-card glass-panel" id="kpi-card-features">
+        <div class="kpi-label">當前啟用特徵數</div>
+        <div class="kpi-value text-blue" id="kpi-features">10 / 20</div>
+        <div class="kpi-subtext" id="kpi-features-sub">Top 10 特徵選擇子集</div>
+      </div>
+      <div class="kpi-card glass-panel" id="kpi-card-samples">
+        <div class="kpi-label">分析樣本量</div>
+        <div class="kpi-value text-purple" id="kpi-samples">5,000</div>
+        <div class="kpi-subtext">訓練 / 驗證劃分比 8:2</div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="tab-navigation glass-panel" aria-label="工作台分頁">
+      <button class="tab-btn active" id="tab-nav-plots" onclick="switchTab('plots')">
+        📈 回歸預測圖與信賴/預測區間
+      </button>
+      <button class="tab-btn" id="tab-nav-features" onclick="switchTab('features')">
+        🎯 特徵選擇實驗室 (Feature Selection)
+      </button>
+      <button class="tab-btn" id="tab-nav-models" onclick="switchTab('models')">
+        🤖 模型訓練與評估 (Model Evaluation)
+      </button>
+      <button class="tab-btn" id="tab-nav-simulator" onclick="switchTab('simulator')">
+        🎛️ 即時機率模擬器 (What-If Predictor)
+      </button>
+      <button class="tab-btn" id="tab-nav-gallery" onclick="switchTab('gallery')">
+        🖼️ Python 高解析圖表總覽
+      </button>
+      <button class="tab-btn" id="tab-nav-data" onclick="switchTab('data')">
+        📁 資料預覽與自訂上傳
+      </button>
+    </nav>
+
+    <!-- ======================================================== -->
+    <!-- TAB 1: 預測圖與信賴區間/預測區間 (Core Feature) -->
+    <!-- ======================================================== -->
+    <section class="tab-pane active" id="pane-plots">
+      <div class="pane-header-box">
+        <div class="pane-title-group">
+          <h2 class="pane-title">線性回歸預測圖與 95% 信賴區間 (CI) / 預測區間 (PI) 可視化</h2>
+          <p class="pane-desc">
+            針對模型預測值繪製不確定性區間帶。<strong>信賴區間 (Confidence Interval)</strong> 反映母體平均反應 $\text{E}(Y|X)$ 的估計變異；<strong>預測區間 (Prediction Interval)</strong> 反映單一全新樣本觀測值的波動範圍。
+          </p>
+        </div>
+        <div class="control-row">
+          <label class="control-label" for="plot-view-mode">視覺化模式：</label>
+          <select class="custom-select" id="plot-view-mode" onchange="renderActivePlot()">
+            <option value="simple-fit">單純線性回歸散布帶圖 (95% CI + 95% PI)</option>
+            <option value="multi-envelope">多元線性回歸排序預測包絡線圖</option>
+            <option value="ar-forecast">自回歸模型 (Auto Regression AR) 時序預測圖</option>
+            <option value="residuals">殘差診斷圖 (Residuals vs Fitted & 分佈)</option>
+          </select>
+
+          <label class="control-label" for="simple-feature-select" id="lbl-simple-feature" style="margin-left: 12px;">選擇自變數 X：</label>
+          <select class="custom-select" id="simple-feature-select" onchange="onSimpleFeatureChange()">
+            <!-- Dynamically populated -->
+          </select>
+        </div>
+      </div>
+
+      <!-- Main Chart Card -->
+      <div class="chart-container-card glass-panel">
+        <div class="chart-toolbar">
+          <div class="chart-legend-custom">
+            <span class="legend-item"><span class="legend-chip color-actual"></span> 真實觀測值</span>
+            <span class="legend-item"><span class="legend-chip color-fitted"></span> 線性回歸擬合線 ($\hat{Y}$)</span>
+            <span class="legend-item"><span class="legend-chip color-ci"></span> 95% 信賴區間帶 (CI)</span>
+            <span class="legend-item"><span class="legend-chip color-pi"></span> 95% 預測區間邊界 (PI)</span>
+          </div>
+          <div class="chart-actions">
+            <button class="btn btn-sm btn-ghost" id="btn-toggle-pi" onclick="togglePredictionInterval()">
+              切換預測區間顯示
+            </button>
+            <button class="btn btn-sm btn-ghost" id="btn-reset-zoom" onclick="resetChartZoom()">
+              重置圖表視角
+            </button>
+          </div>
+        </div>
+
+        <div class="canvas-wrapper">
+          <canvas id="main-interactive-chart"></canvas>
+        </div>
+
+        <!-- Statistical Note Box -->
+        <div class="stat-callout-grid">
+          <div class="stat-callout">
+            <div class="callout-header">
+              <span class="callout-dot bg-cyan"></span>
+              <strong>95% 信賴區間 (Confidence Interval for Mean)</strong>
+            </div>
+            <p class="callout-text">
+              公式：$\hat{y}_0 \pm t_{\alpha/2, df} \cdot s \sqrt{x_0 (X^T X)^{-1} x_0^T}$。<br>
+              代表在給定特徵條件下，<strong>母體平均值</strong>所在區間，帶寬較窄，中央處最窄、兩端微寬。
+            </p>
+          </div>
+          <div class="stat-callout">
+            <div class="callout-header">
+              <span class="callout-dot bg-coral"></span>
+              <strong>95% 預測區間 (Prediction Interval for New Observation)</strong>
+            </div>
+            <p class="callout-text">
+              公式：$\hat{y}_0 \pm t_{\alpha/2, df} \cdot s \sqrt{1 + x_0 (X^T X)^{-1} x_0^T}$。<br>
+              包含模型估計誤差及<strong>個別隨機誤差 $\epsilon$</strong>，因此比信賴區間更寬，涵蓋單一樣本預測範圍。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 2: 特徵選擇實驗室 (Feature Selection Lab) -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-features">
+      <div class="pane-header-box">
+        <div class="pane-title-group">
+          <h2 class="pane-title">特徵選擇實驗室 (Feature Selection Lab)</h2>
+          <p class="pane-desc">
+            運用統計檢定 (F-Regression)、Pearson 相關係數與遞迴特徵消除 (RFE) 篩選關鍵水文與環境因子，降低模型維度並避免共線性過擬合。
+          </p>
+        </div>
+        <div class="control-row">
+          <div class="slider-control-group">
+            <label class="control-label" for="slider-top-k">
+              選取 Top K 特徵數：<span class="slider-badge" id="val-top-k">10</span>
+            </label>
+            <input type="range" min="1" max="20" value="10" class="custom-slider" id="slider-top-k" oninput="onTopKSliderChange(this.value)">
+          </div>
+          <button class="btn btn-primary" id="btn-apply-features" onclick="applyFeatureSelection()">
+            套用特徵選擇並更新模型
+          </button>
+          <button class="btn btn-outline" id="btn-select-all-features" onclick="selectAllFeatures()">
+            選取全部 20 個特徵
+          </button>
+        </div>
+      </div>
+
+      <div class="two-column-layout">
+        <!-- Feature Ranking Chart -->
+        <div class="card glass-panel">
+          <h3 class="card-title">特徵重要性 F-Statistic 評分排行</h3>
+          <div class="canvas-wrapper-md">
+            <canvas id="feature-rank-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Feature Toggle Grid -->
+        <div class="card glass-panel">
+          <div class="card-header-flex">
+            <h3 class="card-title">特徵篩選清單 (點擊可手動切換)</h3>
+            <span class="badge" id="active-features-count">已勾選 10 項</span>
+          </div>
+          <div class="feature-checkbox-grid" id="feature-checkboxes-container">
+            <!-- Dynamically populated checkboxes -->
+          </div>
+          <div class="quick-preset-row">
+            <span class="text-muted">快速選組：</span>
+            <button class="chip-btn" onclick="quickSelectSet('top5')">Top 5 核心因子</button>
+            <button class="chip-btn" onclick="quickSelectSet('top10')">Top 10 平衡因子</button>
+            <button class="chip-btn" onclick="quickSelectSet('infrastructure')">水利設施相關因子</button>
+            <button class="chip-btn" onclick="quickSelectSet('climate')">氣候與地勢因子</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 3: 模型訓練與評估 (Model Training & Evaluation) -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-models">
+      <div class="pane-header-box">
+        <div class="pane-title-group">
+          <h2 class="pane-title">回歸模型訓練與評估 (Model Evaluation)</h2>
+          <p class="pane-desc">
+            比較單純線性回歸、全特徵多元線性回歸、特徵選擇多元線性回歸以及時序自回歸 (Auto Regression AR)，並透過 MAE、MSE、RMSE、R² 與調整後 R² 進行嚴謹評估。
+          </p>
+        </div>
+        <div class="control-row">
+          <label class="control-label" for="ar-lag-select">AR 模型 Lag 期數：</label>
+          <select class="custom-select" id="ar-lag-select" onchange="retrainCurrentModels()">
+            <option value="1">AR(1) - 1 期自回歸</option>
+            <option value="2">AR(2) - 2 期自回歸</option>
+            <option value="3" selected>AR(3) - 3 期自回歸 (預設)</option>
+            <option value="4">AR(4) - 4 期自回歸</option>
+            <option value="5">AR(5) - 5 期自回歸</option>
+          </select>
+          <button class="btn btn-primary" id="btn-retrain-all" onclick="retrainCurrentModels()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            重新計算所有模型指標
+          </button>
+        </div>
+      </div>
+
+      <!-- Evaluation Comparison Table -->
+      <div class="card glass-panel">
+        <h3 class="card-title">模型綜合評估比較矩陣 (Model Evaluation Matrix)</h3>
+        <div class="table-responsive">
+          <table class="evaluation-table" id="evaluation-matrix-table">
+            <thead>
+              <tr>
+                <th>模型架構</th>
+                <th>特徵數 (p)</th>
+                <th>MAE (平均絕對誤差)</th>
+                <th>MSE (均方誤差)</th>
+                <th>RMSE (均方根誤差)</th>
+                <th>決定係數 (R²)</th>
+                <th>調整後 R² (Adj R²)</th>
+                <th>評估效能</th>
+              </tr>
+            </thead>
+            <tbody id="evaluation-table-body">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Evaluation Metric Bar Charts -->
+      <div class="two-column-layout" style="margin-top: 20px;">
+        <div class="card glass-panel">
+          <h3 class="card-title">誤差指標對比 (RMSE vs MAE) - 越低越好</h3>
+          <div class="canvas-wrapper-sm">
+            <canvas id="eval-error-chart"></canvas>
+          </div>
+        </div>
+        <div class="card glass-panel">
+          <h3 class="card-title">決定係數對比 (R² vs Adj-R²) - 越高越好</h3>
+          <div class="canvas-wrapper-sm">
+            <canvas id="eval-r2-chart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 4: 即時機率模擬器 (What-If Predictor) -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-simulator">
+      <div class="pane-header-box">
+        <div class="pane-title-group">
+          <h2 class="pane-title">即時洪水機率預測模擬器 (Real-time What-If Predictor)</h2>
+          <p class="pane-desc">
+            微調各項水文、地形、基礎設施與氣候變遷指標，即時推算預測洪水發生機率，並同步輸出 <strong>95% 信賴區間</strong> (針對此條件之期望機率) 與 <strong>95% 預測區間</strong> (針對特定觀測之單一樣本機率)。
+          </p>
+        </div>
+        <div class="control-row">
+          <span class="text-muted">情境快選：</span>
+          <button class="chip-btn" id="scenario-normal" onclick="applyScenarioPreset('normal')">正常平水情境</button>
+          <button class="chip-btn" id="scenario-typhoon" onclick="applyScenarioPreset('typhoon')">極端暴雨與山崩警報</button>
+          <button class="chip-btn" id="scenario-urban" onclick="applyScenarioPreset('urban')">都市高度開發排水不良</button>
+          <button class="chip-btn" id="scenario-good" onclick="applyScenarioPreset('good')">水利設施完備防汛情境</button>
+          <button class="btn btn-outline btn-sm" id="btn-reset-sliders" onclick="resetSimulatorSliders()">重置滑桿</button>
+        </div>
+      </div>
+
+      <div class="simulator-layout">
+        <!-- Live Result Dashboard Gauge -->
+        <div class="card glass-panel simulator-result-card">
+          <h3 class="card-title">預測推論結果 (Inference Result)</h3>
+          
+          <div class="gauge-display-box">
+            <div class="gauge-circle" id="gauge-circle-elem">
+              <div class="gauge-inner">
+                <span class="gauge-percent" id="sim-predicted-prob">53.4%</span>
+                <span class="gauge-sublabel">預估洪水機率</span>
+              </div>
+            </div>
+            <div class="risk-badge" id="sim-risk-badge">中度警戒 (Moderate Risk)</div>
+          </div>
+
+          <div class="interval-cards-stack">
+            <div class="interval-card ci-card">
+              <div class="interval-title">
+                <span class="interval-tag tag-ci">95% CI</span>
+                <strong>信賴區間 (母體期望值)</strong>
+              </div>
+              <div class="interval-range" id="sim-ci-range">[52.1% ~ 54.7%]</div>
+              <div class="interval-explanation">平均洪水發生機率有 95% 機率落在此帶內</div>
+            </div>
+
+            <div class="interval-card pi-card">
+              <div class="interval-title">
+                <span class="interval-tag tag-pi">95% PI</span>
+                <strong>預測區間 (單一事件值)</strong>
+              </div>
+              <div class="interval-range" id="sim-pi-range">[44.8% ~ 62.0%]</div>
+              <div class="interval-explanation">單次實地觀測數值預期有 95% 機率落在此帶內</div>
+            </div>
+          </div>
+
+          <div class="model-in-use-note">
+            <span>使用模型：</span><strong id="sim-active-model-name">多元線性回歸 (特徵選擇 Top 10)</strong>
+          </div>
+        </div>
+
+        <!-- Parameter Controls Grid -->
+        <div class="card glass-panel simulator-inputs-card">
+          <h3 class="card-title">特徵因子滑桿調節盤 (數值範圍 1 ~ 15)</h3>
+          <div class="sliders-scroll-container" id="simulator-sliders-container">
+            <!-- Dynamically populated sliders -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 5: Python 高解析圖表總覽 (Generated Plots Gallery) -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-gallery">
+      <div class="pane-header-box">
+        <div class="pane-title-group">
+          <h2 class="pane-title">Python Matplotlib 分析圖表總覽</h2>
+          <p class="pane-desc">
+            由 <code>main.py</code> 統計分析管道所產製的高解析圖表，涵蓋單純線性回歸、多元回歸帶狀區間、時序自回歸外推及殘差分佈檢驗。
+          </p>
+        </div>
+      </div>
+
+      <div class="gallery-grid">
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_1_simple_linear_regression_ci_pi.png" alt="單純線性回歸 95% 信賴區間與預測區間" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 1：單純線性回歸預測圖 (95% CI + 95% PI)</h4>
+            <p class="gallery-desc">展示最佳單一因子散布點、擬合回歸線、淺藍 95% 信賴區間帶與紅色虛線 95% 預測區間。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_2_multiple_linear_regression_ci_pi.png" alt="多元線性回歸排序預測圖" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 2：多元線性回歸排序檢驗圖 (95% CI + 95% PI)</h4>
+            <p class="gallery-desc">依預測值升序排列，展示真實觀測與多元回歸預測值之信賴區間帶與預測區間包絡線。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_3_autoregression_forecast.png" alt="自回歸模型 AR(3) 預測走勢" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 3：自回歸模型 AR(3) 預測走勢與預測區間</h4>
+            <p class="gallery-desc">以歷史時序進行連續多步預測，紫色虛線為點預測，外圍淺紫色為隨步長拓展之 95% 預測帶。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_4_feature_selection.png" alt="特徵選擇 F-Score 評分排行" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 4：特徵選擇 F-Score 統計檢定排行</h4>
+            <p class="gallery-desc">依 F-Statistic 由大至小排序，標示入選 Top 10 之關鍵環境因子。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_5_residuals_diagnostics.png" alt="殘差診斷圖" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 5：回歸殘差診斷與常態性檢定</h4>
+            <p class="gallery-desc">左圖檢驗殘差對擬合值的獨立與同質變異；右圖檢驗殘差常態分佈假設與偏態。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_model_comparison.png" alt="模型評估指標綜合對比" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 6：多元模型評估指標綜合對比</h4>
+            <p class="gallery-desc">橫向對比各回歸模型之 RMSE、MAE 誤差大小與 R² 決定係數優劣。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 6: 資料預覽與自訂上傳 (Data Hub) -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-data">
+      <div class="pane-header-box">
+        <div class="pane-title-group">
+          <h2 class="pane-title">水文資料中心與自訂 CSV 上傳 (Data Hub)</h2>
+          <p class="pane-desc">
+            預覽基準資料集前 100 筆紀錄，或點擊下方按鈕上傳您自己的水文觀測 CSV 檔案進行即時分析與重算。
+          </p>
+        </div>
+        <div class="control-row">
+          <label class="btn btn-outline" for="csv-file-input">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            上傳自訂 CSV 檔案
+          </label>
+          <input type="file" id="csv-file-input" accept=".csv" style="display:none;" onchange="handleCsvUpload(event)">
+          <button class="btn btn-primary" id="btn-download-submission" onclick="downloadSubmissionCsv()">
+            下載 Kaggle submission.csv
+          </button>
+        </div>
+      </div>
+
+      <div class="card glass-panel">
+        <div class="card-header-flex">
+          <h3 class="card-title">訓練資料預覽 (Data Preview Table)</h3>
+          <input type="text" class="custom-input" id="table-search-input" placeholder="搜尋任意欄位數值..." oninput="filterDataTable(this.value)">
+        </div>
+        <div class="table-responsive" style="max-height: 480px;">
+          <table class="data-preview-table" id="data-preview-table">
+            <thead id="data-table-head">
+              <!-- Dynamically populated columns -->
+            </thead>
+            <tbody id="data-table-body">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Image Lightbox Modal -->
+  <div class="lightbox-modal" id="image-lightbox" onclick="closeLightbox()">
+    <span class="lightbox-close">&times;</span>
+    <img class="lightbox-img" id="lightbox-img" src="" alt="放大圖表">
+  </div>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <p>HydroPredict AI Platform © 2026 | 線性回歸、特徵選擇、模型評估與 95% 信賴/預測區間分析系統</p>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="chart.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
