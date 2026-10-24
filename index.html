@@ -248,12 +248,11 @@
           <div class="feature-checkbox-grid" id="feature-checkboxes-container">
             <!-- Dynamically populated checkboxes -->
           </div>
-          <div class="quick-preset-row">
+          <div class="quick-preset-row" id="feature-quick-presets-container">
             <span class="text-muted">快速選組：</span>
             <button class="chip-btn" onclick="quickSelectSet('top5')">Top 5 核心因子</button>
             <button class="chip-btn" onclick="quickSelectSet('top10')">Top 10 平衡因子</button>
-            <button class="chip-btn" onclick="quickSelectSet('infrastructure')">水利設施相關因子</button>
-            <button class="chip-btn" onclick="quickSelectSet('climate')">氣候與地勢因子</button>
+            <button class="chip-btn" onclick="selectAllFeatures()">全選</button>
           </div>
         </div>
       </div>
@@ -405,90 +404,15 @@
     <section class="tab-pane" id="pane-gallery">
       <div class="pane-header-box">
         <div class="pane-title-group">
-          <h2 class="pane-title">Python Matplotlib 分析圖表總覽與問題架構介紹</h2>
-          <p class="pane-desc">
+          <h2 class="pane-title" id="gallery-pane-title">Python Matplotlib 分析圖表總覽與問題架構介紹</h2>
+          <p class="pane-desc" id="gallery-pane-desc">
             整合 CRISP-DM 洪水回歸分析流程與 Kaggle 瑞士房價競賽資料集架構。點擊任意縮圖即可開啟高解析燈箱檢視。
           </p>
         </div>
       </div>
 
-      <!-- Swiss Housing Kaggle Feature Card -->
-      <div class="card glass-panel" style="margin-bottom: 24px; border-left: 4px solid #38bdf8;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;">
-          <div>
-            <h3 style="font-size: 17px; font-weight: 700; color: #38bdf8; margin-bottom: 6px;">
-              🏔️ Kaggle Competition: Swiss Housing Price Prediction (i3-ml-21-22-mini-project)
-            </h3>
-            <p style="color: var(--text-muted); font-size: 13.5px; max-width: 900px; line-height: 1.6;">
-              本資料集源自瑞士機器學習競賽，透過 11 項關鍵房地產維度（居住面積 <code>LivingSpace</code>、房間數 <code>Rooms</code>、衛浴數 <code>Bathrooms</code>、樓層 <code>Floor</code>、屋齡 <code>YearBuilt</code>、市中心距離 <code>DistanceCityCenter</code>、陽台 <code>HasBalcony</code>、停車位 <code>ParkingSpaces</code>、山景指數 <code>MountainViewScore</code>、能源評級 <code>EnergyEfficiency</code>、稅率係數 <code>TaxMultiplier</code>）建立多元線性回歸模型，精準估算瑞士法郎售價 <code>PriceCHF</code>，並推導 95% 信賴區間與預測區間。
-            </p>
-          </div>
-          <a href="https://www.kaggle.com/competitions/i3-ml-21-22-mini-project" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
-            🔗 開啟 Kaggle 競賽專頁
-          </a>
-        </div>
-      </div>
-
-      <div class="gallery-grid">
-        <div class="gallery-card glass-panel">
-          <div class="gallery-img-wrap">
-            <img src="plot_1_simple_linear_regression_ci_pi.png" alt="單純線性回歸 95% 信賴區間與預測區間" class="gallery-img" onclick="openLightbox(this.src)">
-          </div>
-          <div class="gallery-info">
-            <h4 class="gallery-title">圖 1：單純線性回歸預測圖 (95% CI + 95% PI)</h4>
-            <p class="gallery-desc">展示最佳單一因子散布點、擬合回歸線、淺藍 95% 信賴區間帶與紅色虛線 95% 預測區間。</p>
-          </div>
-        </div>
-
-        <div class="gallery-card glass-panel">
-          <div class="gallery-img-wrap">
-            <img src="plot_2_multiple_linear_regression_ci_pi.png" alt="多元線性回歸排序預測圖" class="gallery-img" onclick="openLightbox(this.src)">
-          </div>
-          <div class="gallery-info">
-            <h4 class="gallery-title">圖 2：多元線性回歸排序檢驗圖 (95% CI + 95% PI)</h4>
-            <p class="gallery-desc">依預測值升序排列，展示真實觀測與多元回歸預測值之信賴區間帶與預測區間包絡線。</p>
-          </div>
-        </div>
-
-        <div class="gallery-card glass-panel">
-          <div class="gallery-img-wrap">
-            <img src="plot_3_autoregression_forecast.png" alt="自回歸模型 AR(3) 預測走勢" class="gallery-img" onclick="openLightbox(this.src)">
-          </div>
-          <div class="gallery-info">
-            <h4 class="gallery-title">圖 3：自回歸模型 AR(3) 預測走勢與預測區間</h4>
-            <p class="gallery-desc">以歷史時序進行連續多步預測，紫色虛線為點預測，外圍淺紫色為隨步長拓展之 95% 預測帶。</p>
-          </div>
-        </div>
-
-        <div class="gallery-card glass-panel">
-          <div class="gallery-img-wrap">
-            <img src="plot_4_feature_selection.png" alt="特徵選擇 F-Score 評分排行" class="gallery-img" onclick="openLightbox(this.src)">
-          </div>
-          <div class="gallery-info">
-            <h4 class="gallery-title">圖 4：特徵選擇 F-Score 統計檢定排行</h4>
-            <p class="gallery-desc">依 F-Statistic 由大至小排序，標示入選關鍵環境與房產因子。</p>
-          </div>
-        </div>
-
-        <div class="gallery-card glass-panel">
-          <div class="gallery-img-wrap">
-            <img src="plot_5_residuals_diagnostics.png" alt="殘差診斷圖" class="gallery-img" onclick="openLightbox(this.src)">
-          </div>
-          <div class="gallery-info">
-            <h4 class="gallery-title">圖 5：回歸殘差診斷與常態性檢定</h4>
-            <p class="gallery-desc">左圖檢驗殘差對擬合值的獨立與同質變異；右圖檢驗殘差常態分佈假設與偏態。</p>
-          </div>
-        </div>
-
-        <div class="gallery-card glass-panel">
-          <div class="gallery-img-wrap">
-            <img src="plot_model_comparison.png" alt="模型評估指標綜合對比" class="gallery-img" onclick="openLightbox(this.src)">
-          </div>
-          <div class="gallery-info">
-            <h4 class="gallery-title">圖 6：多元模型評估指標綜合對比</h4>
-            <p class="gallery-desc">橫向對比各回歸模型之 RMSE、MAE 誤差大小與 R² 決定係數優劣。</p>
-          </div>
-        </div>
+      <div id="gallery-content-dynamic">
+        <!-- Dynamically populated by renderGallerySection() for flood, swiss, or custom dataset -->
       </div>
     </section>
 

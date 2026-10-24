@@ -1,8 +1,13 @@
 /**
  * ML Predictor Studio (app.js)
- * 支援多資料集問題切換 (CRISP-DM 洪水機率預測 & Kaggle 瑞士房價預測)
- * 支援任意遠端 CSV URL 載入 (如 50_Startups.csv) 與本地 CSV 上傳
- * 具備 OLS 線性回歸、特徵選擇、95% 信賴/預測區間推導與即時 What-If 模擬引擎
+ * 完整回歸分析平台：
+ * 1. 雙經典問題切換 (CRISP-DM 洪水機率預測 & Kaggle 瑞士房價預測)
+ * 2. 任意遠端 CSV URL 載入 (如 50_Startups.csv) 與本地 CSV 檔案解析
+ * 3. 線性回歸、多元回歸、自回歸 AR(p)
+ * 4. 95% 信賴區間 (CI) 與 預測區間 (PI) 嚴謹矩陣推導
+ * 5. 特徵選擇實驗室 (F-Regression 排行與自適應 Top-K)
+ * 6. 模型評估綜合矩陣 (RMSE, MAE, R², Adj-R²)
+ * 7. 即時 What-If 模擬器與高解析科學圖表展示
  */
 
 // ============================================================
@@ -38,6 +43,12 @@ const PROBLEMS = {
       { id: "typhoon", name: "🌀 暴雨颱風警報", desc: "季風強度、氣候變遷與山崩風險飆高" },
       { id: "urban", name: "🏙️ 都市排水失效", desc: "過度都市化、規劃不足且排水不良" },
       { id: "good", name: "🛡️ 完善防汛水利", desc: "水壩與集水區設施維護優良" }
+    ],
+    featureQuickSets: [
+      { id: "top5", name: "Top 5 核心因子", count: 5 },
+      { id: "top10", name: "Top 10 平衡因子", count: 10 },
+      { id: "infrastructure", name: "水利設施相關因子", list: ["DamsQuality", "DrainageSystems", "DeterioratingInfrastructure", "RiverManagement", "TopographyDrainage"] },
+      { id: "climate", name: "氣候與地勢因子", list: ["MonsoonIntensity", "ClimateChange", "Landslides", "Watersheds", "Deforestation"] }
     ]
   },
 
@@ -66,6 +77,12 @@ const PROBLEMS = {
       { id: "urban_apt", name: "🏙️ 蘇黎世市區公寓", desc: "近市中心、中坪數生活機能佳" },
       { id: "suburban", name: "🏡 近郊花園住宅", desc: "透天大空間、附車位與陽台" },
       { id: "studio", name: "🏢 單身/學生小套房", desc: "低坪數、小巧實用市中心套房" }
+    ],
+    featureQuickSets: [
+      { id: "top4", name: "Top 4 結構核心", count: 4 },
+      { id: "top8", name: "Top 8 完整房產指標", count: 8 },
+      { id: "location", name: "地段與生活機能", list: ["DistanceCityCenter", "MountainViewScore", "HasBalcony", "ParkingSpaces"] },
+      { id: "structure", name: "房屋結構與建材", list: ["LivingSpace", "Rooms", "Bathrooms", "Floor", "YearBuilt", "EnergyEfficiency"] }
     ]
   },
 
@@ -87,8 +104,13 @@ const PROBLEMS = {
     simpleFeature: "",
     scenarioPresets: [
       { id: "mean", name: "📊 樣本均值設定", desc: "所有數值設為資料集平均值" },
-      { id: "high", name: "📈 高數值評估", desc: "所有自變數調整至 75 百分位" },
-      { id: "low", name: "📉 低數值評估", desc: "所有自變數調整至 25 百分位" }
+      { id: "high", name: "📈 高數值評估 (75%)", desc: "所有自變數調整至 75 百分位" },
+      { id: "low", name: "📉 低數值評估 (25%)", desc: "所有自變數調整至 25 百分位" }
+    ],
+    featureQuickSets: [
+      { id: "top3", name: "Top 3 特徵", count: 3 },
+      { id: "top5", name: "Top 5 特徵", count: 5 },
+      { id: "top10", name: "Top 10 特徵", count: 10 }
     ]
   }
 };
@@ -111,7 +133,7 @@ const state = {
   simpleFeature: PROBLEMS.flood.simpleFeature,
   arLags: 3,
 
-  // 數值範圍快取 (用於滑桿動態範圍配置)
+  // 數值極值統計快取
   featureStats: {},
   targetStats: {},
 
@@ -192,7 +214,7 @@ async function handleProblemChange(problemId, updateSelect = true) {
 }
 
 /**
- * 快捷切換預設資料集
+ * 快捷切換預設資料集標籤
  */
 function quickLoadPreset(type) {
   if (type === "flood") {
@@ -317,7 +339,7 @@ function calculateDatasetStats() {
     const max = Math.max(...vals);
     const m = mean(vals);
     const span = max - min;
-    const step = span > 50 ? 1 : (span > 5 ? 0.5 : 0.05);
+    const step = span > 50 ? 1 : (span > 5 ? 0.5 : (span > 1 ? 0.1 : 0.01));
     state.featureStats[feat] = { min, max, mean: m, step };
   });
 
@@ -346,6 +368,7 @@ function rebuildWorkspace() {
   renderFeatureRankChart();
   renderEvaluationTable();
   renderEvaluationCharts();
+  renderGallerySection();
   renderDataTable();
   updateSimulatorInference();
 }
@@ -380,9 +403,6 @@ function handleTargetVariableChange(newTarget) {
   rebuildWorkspace();
 }
 
-/**
- * 取得資料集中所有數值型欄位名稱
- */
 function getNumericColumnNames() {
   if (state.dataset.length === 0) return [state.target];
   const sample = state.dataset[0];
@@ -392,13 +412,9 @@ function getNumericColumnNames() {
   });
 }
 
-/**
- * 更新頂端 Badge
- */
 function updateHeaderBadges() {
   const badge = document.getElementById("dataset-status-badge");
   if (badge) {
-    const cfg = PROBLEMS[state.currentProblemId];
     const n = state.dataset.length.toLocaleString();
     if (state.currentProblemId === "flood") {
       badge.innerHTML = `<span class="status-dot"></span> 基準水文資料集 (${n} 筆)`;
@@ -409,7 +425,6 @@ function updateHeaderBadges() {
     }
   }
 
-  // 更新 KPI 卡片樣本數
   const kpiSamples = document.getElementById("kpi-samples");
   if (kpiSamples) kpiSamples.innerText = state.dataset.length.toLocaleString();
 }
@@ -418,9 +433,6 @@ function updateHeaderBadges() {
 // 2. 任意遠端 CSV URL 載入與本地 CSV 解析器
 // ============================================================
 
-/**
- * 從任意 URL 載入 CSV (如 50_Startups.csv)
- */
 async function loadDatasetFromUrl() {
   const input = document.getElementById("dataset-url-input");
   const btn = document.getElementById("btn-load-url");
@@ -448,11 +460,12 @@ async function loadDatasetFromUrl() {
     if (rows.length < 5) throw new Error("CSV 資料列數過少 (至少需要 5 筆觀測值)");
 
     state.currentProblemId = "custom";
-    document.getElementById("problem-select").value = "custom";
+    const pSel = document.getElementById("problem-select");
+    if (pSel) pSel.value = "custom";
     updateQuickChipsHighlight();
 
     // 智能識別目標變數 Target
-    let detectedTarget = headers[headers.length - 1]; // 預設為最後一欄
+    let detectedTarget = headers[headers.length - 1];
     const priorityTargets = ["Profit", "Price", "price", "Target", "target", "PriceCHF", "FloodProbability", "y", "label"];
     for (const pt of priorityTargets) {
       if (headers.includes(pt)) {
@@ -463,8 +476,6 @@ async function loadDatasetFromUrl() {
 
     state.target = detectedTarget;
     state.dataset = rows;
-
-    // 篩選自變數特徵 (排除 id 與 target)
     state.features = headers.filter(h => h !== "id" && h !== detectedTarget);
     state.selectedFeatures = state.features.slice(0, Math.min(10, state.features.length));
     state.simpleFeature = state.features[0] || "";
@@ -476,7 +487,7 @@ async function loadDatasetFromUrl() {
     alert(`🎉 成功載入自訂遠端資料集！共解析 ${rows.length} 筆觀測值、${state.features.length} 項自變數特徵，預設目標為 [${state.target}]。已自動重新訓練所有模型！`);
   } catch (err) {
     console.error("載入遠端 CSV 失敗:", err);
-    alert(`無法載入遠端資料集 (${err.message})。\n提示：若遭遇跨來源 (CORS) 限制，請確保使用 GitHub Raw 或支援 CORS 的 CDN 連結。`);
+    alert(`無法載入遠端資料集 (${err.message})。\n提示：若遭遇跨來源 (CORS) 限制，請確保使用 GitHub Raw 連結。`);
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -485,9 +496,6 @@ async function loadDatasetFromUrl() {
   }
 }
 
-/**
- * 處理使用者本地檔案上傳 CSV
- */
 function handleCsvUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -500,10 +508,10 @@ function handleCsvUpload(event) {
       if (rows.length < 5) throw new Error("CSV 資料列數不足");
 
       state.currentProblemId = "custom";
-      document.getElementById("problem-select").value = "custom";
+      const pSel = document.getElementById("problem-select");
+      if (pSel) pSel.value = "custom";
       updateQuickChipsHighlight();
 
-      // 目標識別
       let detectedTarget = headers[headers.length - 1];
       const priorityTargets = ["Profit", "Price", "price", "Target", "target", "PriceCHF", "FloodProbability"];
       for (const pt of priorityTargets) {
@@ -531,14 +539,10 @@ function handleCsvUpload(event) {
   reader.readAsText(file);
 }
 
-/**
- * 通用 CSV 字串解析器 (支援雙引號、類別變數 One-Hot 編碼轉換)
- */
 function parseCsvText(csvText) {
   const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
   if (lines.length < 2) return { headers: [], rows: [] };
 
-  // 解析第一行 Header
   const rawHeaders = parseCsvLine(lines[0]);
   const rawRows = [];
 
@@ -553,12 +557,10 @@ function parseCsvText(csvText) {
     }
   }
 
-  // 檢查欄位型別並將類別特徵 One-Hot 編碼 (例如 50_Startups.csv 中的 State 欄位)
   const finalHeaders = [];
   const processedRows = rawRows.map(r => ({ ...r }));
 
   rawHeaders.forEach(h => {
-    // 檢查是否皆為數值
     let isNumeric = true;
     const distinctStrValues = new Set();
 
@@ -577,7 +579,6 @@ function parseCsvText(csvText) {
         r[h] = parseFloat(r[h]) || 0;
       });
     } else if (distinctStrValues.size <= 8 && distinctStrValues.size > 1) {
-      // 類別項 One-Hot 編碼
       distinctStrValues.forEach(cat => {
         const dummyCol = `${h}_${cat.replace(/\s+/g, '_')}`;
         finalHeaders.push(dummyCol);
@@ -586,15 +587,11 @@ function parseCsvText(csvText) {
         });
       });
     }
-    // 其餘高基數文字欄位直接忽略
   });
 
   return { headers: finalHeaders, rows: processedRows };
 }
 
-/**
- * 輔助解析單行 CSV (處理雙引號與逗號)
- */
 function parseCsvLine(line) {
   const result = [];
   let cur = "";
@@ -615,9 +612,6 @@ function parseCsvLine(line) {
   return result;
 }
 
-/**
- * 下載目前資料集為 CSV
- */
 function downloadCurrentDatasetCsv() {
   if (state.dataset.length === 0) return;
   const cols = ["id", ...state.features, state.target];
@@ -639,7 +633,7 @@ function downloadSubmissionCsv() {
 }
 
 // ============================================================
-// 3. 統計回歸運算核心 (OLS Regression with 95% CI & PI)
+// 3. 統計回歸運算核心 (OLS with 95% CI & PI)
 // ============================================================
 
 class LinearRegressionModel {
@@ -647,8 +641,8 @@ class LinearRegressionModel {
     this.features = featureNames;
     this.p = featureNames.length;
     this.beta = [];              // [intercept, beta_1, ... beta_p]
-    this.xtxInv = null;          // (X^T X)^(-1) 共變異數縮放矩陣
-    this.mse = 0;                // 均方誤差 s^2
+    this.xtxInv = null;          // (X^T X)^(-1)
+    this.mse = 0;
     this.se = 0;                 // 殘差標準誤差 s = sqrt(MSE)
     this.df = 1;                 // 自由度 n - p - 1
     this.tCritical = 1.96;
@@ -666,7 +660,6 @@ class LinearRegressionModel {
 
     if (n === 0 || p === 0) return this;
 
-    // 建構 X (常數項 1) 與 y
     const X = [];
     const y = [];
     for (let i = 0; i < n; i++) {
@@ -682,7 +675,6 @@ class LinearRegressionModel {
     const XtX = matMul(Xt, X);
     this.xtxInv = invertMatrix(XtX);
 
-    // 奇異矩陣嶺回歸擾動保護
     if (!this.xtxInv) {
       for (let i = 0; i < XtX.length; i++) XtX[i][i] += 1e-4;
       this.xtxInv = invertMatrix(XtX) || identityMatrix(p + 1);
@@ -691,7 +683,6 @@ class LinearRegressionModel {
     const Xty = matMulVec(Xt, y);
     this.beta = matMulVec(this.xtxInv, Xty);
 
-    // 計算擬合殘差與指標
     let sse = 0;
     let sae = 0;
     const yMean = mean(y);
@@ -725,9 +716,6 @@ class LinearRegressionModel {
     return val;
   }
 
-  /**
-   * 推導 95% 信賴區間 (CI) 與 95% 預測區間 (PI)
-   */
   predictWithIntervals(sample) {
     const x0 = [1];
     for (let j = 0; j < this.p; j++) {
@@ -739,7 +727,6 @@ class LinearRegressionModel {
       yHat += x0[i] * (this.beta[i] || 0);
     }
 
-    // Leverage 槓桿值 h0 = x0 (X^T X)^(-1) x0^T
     let h0 = 0;
     if (this.xtxInv) {
       for (let i = 0; i < x0.length; i++) {
@@ -754,9 +741,7 @@ class LinearRegressionModel {
     }
     h0 = Math.max(0, h0);
 
-    // 信賴區間標準誤 SE_mean = s * sqrt(h0)
     const seMean = this.se * Math.sqrt(h0);
-    // 預測區間標準誤 SE_pred = s * sqrt(1 + h0)
     const sePred = this.se * Math.sqrt(1 + h0);
 
     const marginCi = this.tCritical * seMean;
@@ -805,9 +790,6 @@ class LinearRegressionModel {
   }
 }
 
-/**
- * 自回歸模型 (Auto Regression AR(p))
- */
 class AutoRegressionModel {
   constructor(lags = 3) {
     this.lags = lags;
@@ -875,9 +857,6 @@ class AutoRegressionModel {
   }
 }
 
-/**
- * 本地計算各特徵之 F-score
- */
 function computeFeatureScoresLocally() {
   const y = state.trainData.map(d => Number(d[state.target]) || 0);
   const yMean = mean(y);
@@ -909,25 +888,17 @@ function getTopKFeatures(k = 10) {
     .slice(0, Math.min(k, state.features.length));
 }
 
-/**
- * 訓練全架構模型
- */
 function trainAllModels() {
   const tr = state.trainData;
   const tgt = state.target;
 
-  // 1. 單純線性回歸 (Simple Linear Regression)
   const sf = state.simpleFeature || state.features[0];
   state.models.simple = new LinearRegressionModel([sf]).fit(tr, tgt);
-
-  // 2. 多元線性回歸 - 全特徵 (MLR All)
   state.models.mlrAll = new LinearRegressionModel(state.features).fit(tr, tgt);
 
-  // 3. 多元線性回歸 - 特徵選擇子集 (MLR Selected)
   const selFeats = state.selectedFeatures.length > 0 ? state.selectedFeatures : state.features.slice(0, 5);
   state.models.mlrSelected = new LinearRegressionModel(selFeats).fit(tr, tgt);
 
-  // 4. 時序自回歸 (AutoReg AR)
   const series = tr.map(d => Number(d[tgt]) || 0);
   state.models.ar = new AutoRegressionModel(state.arLags).fit(series);
 
@@ -950,12 +921,33 @@ function trainAllModels() {
   if (featSub) featSub.innerText = `選入 Top ${state.selectedFeatures.length} 特徵子集`;
 }
 
+/**
+ * 重新計算 / 重新訓練所有模型 (AR Lag 變動或點擊按鈕時觸發)
+ */
+function retrainCurrentModels() {
+  const lagSelect = document.getElementById("ar-lag-select");
+  if (lagSelect) state.arLags = parseInt(lagSelect.value) || 3;
+
+  trainAllModels();
+  renderEvaluationTable();
+  renderEvaluationCharts();
+  if (state.currentPlotMode === "ar-forecast") renderActivePlot();
+
+  const btn = document.getElementById("btn-retrain-all");
+  if (btn) {
+    const origHtml = btn.innerHTML;
+    btn.innerText = "✨ 模型指標已即時重算更新！";
+    setTimeout(() => { btn.innerHTML = origHtml; }, 1200);
+  }
+}
+
 // ============================================================
 // 4. 特徵選擇面板 (Feature Selection Lab)
 // ============================================================
 
 function initFeatureSelection() {
-  const container = document.getElementById("feature-checkbox-grid");
+  // 對應 index.html 中的 feature-checkboxes-container
+  const container = document.getElementById("feature-checkboxes-container") || document.getElementById("feature-checkbox-grid");
   if (!container) return;
 
   container.innerHTML = "";
@@ -982,7 +974,46 @@ function initFeatureSelection() {
     container.appendChild(item);
   });
 
+  // 更新 Top-K 滑桿範圍與數值
+  const slider = document.getElementById("slider-top-k");
+  const valSpan = document.getElementById("val-top-k");
+  if (slider) {
+    slider.min = "1";
+    slider.max = String(Math.max(1, state.features.length));
+    slider.value = String(state.selectedFeatures.length);
+  }
+  if (valSpan) valSpan.innerText = state.selectedFeatures.length;
+
+  // 動態更新快速選組按鈕
+  initFeatureQuickSetButtons();
   updateActiveFeaturesCount();
+}
+
+function initFeatureQuickSetButtons() {
+  const container = document.getElementById("feature-quick-presets-container");
+  if (!container) return;
+
+  const cfg = PROBLEMS[state.currentProblemId] || PROBLEMS.flood;
+  const sets = cfg.featureQuickSets || [];
+
+  container.innerHTML = `
+    <span class="text-muted">快速選組：</span>
+    ${sets.map(s => `
+      <button class="chip-btn" onclick="quickSelectSet('${s.id}')">${s.name}</button>
+    `).join("")}
+    <button class="chip-btn" onclick="selectAllFeatures()">全選 (${state.features.length})</button>
+  `;
+}
+
+function onTopKSliderChange(val) {
+  val = parseInt(val) || 1;
+  const span = document.getElementById("val-top-k");
+  if (span) span.innerText = val;
+
+  state.selectedFeatures = getTopKFeatures(val);
+  syncFeatureCheckboxes();
+  updateActiveFeaturesCount();
+  applyFeatureSelection();
 }
 
 function toggleFeatureCheckbox(feat) {
@@ -1011,11 +1042,16 @@ function syncFeatureCheckboxes() {
       item.classList.toggle("selected", isSel);
     }
   });
+
+  const slider = document.getElementById("slider-top-k");
+  const valSpan = document.getElementById("val-top-k");
+  if (slider) slider.value = String(state.selectedFeatures.length);
+  if (valSpan) valSpan.innerText = state.selectedFeatures.length;
 }
 
 function updateActiveFeaturesCount() {
   const span = document.getElementById("active-features-count");
-  if (span) span.innerText = state.selectedFeatures.length;
+  if (span) span.innerText = `已勾選 ${state.selectedFeatures.length} 項`;
 }
 
 function selectAllFeatures() {
@@ -1025,14 +1061,25 @@ function selectAllFeatures() {
   applyFeatureSelection();
 }
 
-function quickSelectSet(setName) {
-  if (setName === 'top5') {
+function quickSelectSet(setId) {
+  const cfg = PROBLEMS[state.currentProblemId] || PROBLEMS.flood;
+  const sets = cfg.featureQuickSets || [];
+  const found = sets.find(s => s.id === setId);
+
+  if (found) {
+    if (found.count) {
+      state.selectedFeatures = getTopKFeatures(found.count);
+    } else if (found.list) {
+      state.selectedFeatures = found.list.filter(f => state.features.includes(f));
+    }
+  } else if (setId === 'top5') {
     state.selectedFeatures = getTopKFeatures(5);
-  } else if (setName === 'top10') {
+  } else if (setId === 'top10') {
     state.selectedFeatures = getTopKFeatures(10);
   } else {
-    state.selectedFeatures = getTopKFeatures(Math.min(7, state.features.length));
+    state.selectedFeatures = getTopKFeatures(Math.min(6, state.features.length));
   }
+
   syncFeatureCheckboxes();
   updateActiveFeaturesCount();
   applyFeatureSelection();
@@ -1054,9 +1101,6 @@ function applyFeatureSelection() {
   }
 }
 
-/**
- * 繪製特徵 F-score 長條排行圖
- */
 function renderFeatureRankChart() {
   const ctx = document.getElementById("feature-rank-chart");
   if (!ctx || !window.Chart) return;
@@ -1100,7 +1144,7 @@ function renderFeatureRankChart() {
 }
 
 // ============================================================
-// 5. 線性回歸預測圖與 95% 信賴/預測區間可視化
+// 5. 線性回歸預測圖與 95% 信賴/預測區間可視化 (Tab 1 修正)
 // ============================================================
 
 function initSimpleFeatureDropdown() {
@@ -1150,7 +1194,8 @@ function renderActivePlot() {
     selSimple.style.display = isSimple ? "inline-block" : "none";
   }
 
-  const canvas = document.getElementById("main-prediction-chart");
+  // 修正：支援 main-interactive-chart 與 main-prediction-chart 兩種相容 ID
+  const canvas = document.getElementById("main-interactive-chart") || document.getElementById("main-prediction-chart");
   if (!canvas || !window.Chart) return;
   const ctx = canvas.getContext("2d");
 
@@ -1167,9 +1212,6 @@ function renderActivePlot() {
   }
 }
 
-/**
- * 5.1 單純線性回歸散布帶圖 (95% CI + 95% PI)
- */
 function renderSimpleRegressionPlot(ctx) {
   const sf = state.simpleFeature || state.features[0];
   const model = state.models.simple;
@@ -1290,9 +1332,6 @@ function renderSimpleRegressionPlot(ctx) {
   });
 }
 
-/**
- * 5.2 多元線性回歸排序預測包絡線圖
- */
 function renderMultipleRegressionEnvelopePlot(ctx) {
   const model = state.models.mlrSelected || state.models.mlrAll;
   if (!model) return;
@@ -1403,9 +1442,6 @@ function renderMultipleRegressionEnvelopePlot(ctx) {
   });
 }
 
-/**
- * 5.3 自回歸模型時序預測圖 (AR)
- */
 function renderAutoRegressionPlot(ctx) {
   const arModel = state.models.ar;
   if (!arModel) return;
@@ -1490,9 +1526,6 @@ function renderAutoRegressionPlot(ctx) {
   });
 }
 
-/**
- * 5.4 殘差診斷圖
- */
 function renderResidualsPlot(ctx) {
   const model = state.models.mlrSelected || state.models.mlrAll;
   if (!model) return;
@@ -1552,7 +1585,7 @@ function renderResidualsPlot(ctx) {
 }
 
 // ============================================================
-// 6. 模型評估展示 (Model Evaluation Table & Charts)
+// 6. 模型評估展示 (Tab 3 修正: renderEvaluationTable & Charts)
 // ============================================================
 
 function renderEvaluationTable() {
@@ -1566,11 +1599,33 @@ function renderEvaluationTable() {
   const evalAll = state.models.mlrAll.evaluate(valData, target);
   const evalSel = state.models.mlrSelected.evaluate(valData, target);
 
+  // 計算 AR 模型評估
+  const seriesTr = state.trainData.map(d => Number(d[target]) || 0);
+  const seriesVal = valData.map(d => Number(d[target]) || 0);
+  const fc = state.models.ar.forecast(seriesTr, seriesVal.length).forecasts;
+  let arSse = 0, arSae = 0;
+  const yMean = mean(seriesVal);
+  let arSst = 0;
+  for (let i = 0; i < seriesVal.length; i++) {
+    const err = seriesVal[i] - fc[i];
+    arSse += err * err;
+    arSae += Math.abs(err);
+    arSst += Math.pow(seriesVal[i] - yMean, 2);
+  }
+  const evalAr = {
+    MAE: arSae / Math.max(1, seriesVal.length),
+    MSE: arSse / Math.max(1, seriesVal.length),
+    RMSE: Math.sqrt(arSse / Math.max(1, seriesVal.length)),
+    R2: arSst > 0 ? Math.max(0, 1 - (arSse / arSst)) : 0,
+    Adj_R2: arSst > 0 ? Math.max(0, 1 - (1 - Math.max(0, 1 - (arSse / arSst))) * (seriesVal.length - 1) / Math.max(1, seriesVal.length - state.arLags - 1)) : 0
+  };
+
   const sf = state.simpleFeature || state.features[0];
   const rows = [
     { name: `單純線性回歸 (Simple LR: ${sf})`, p: 1, ...evalSimple, badge: "基準單變量" },
     { name: `多元線性回歸 - 全特徵 (MLR All ${state.features.length})`, p: state.features.length, ...evalAll, badge: "高精度全模型", isBest: true },
-    { name: `多元線性回歸 - 特徵選擇 (MLR Top ${state.selectedFeatures.length})`, p: state.selectedFeatures.length, ...evalSel, badge: "精簡高效模型" }
+    { name: `多元線性回歸 - 特徵選擇 (MLR Top ${state.selectedFeatures.length})`, p: state.selectedFeatures.length, ...evalSel, badge: "精簡高效模型" },
+    { name: `時序自回歸 (AutoReg AR(${state.arLags}))`, p: state.arLags, ...evalAr, badge: "時序趨勢外推" }
   ];
 
   tbody.innerHTML = rows.map(r => `
@@ -1657,9 +1712,6 @@ function renderEvaluationCharts() {
 // 7. 即時 What-If 模擬器與情境切換
 // ============================================================
 
-/**
- * 初始化情境按鈕 (根據當前問題動態產製)
- */
 function initScenarioButtons() {
   const container = document.getElementById("scenario-presets-container");
   if (!container) return;
@@ -1676,9 +1728,6 @@ function initScenarioButtons() {
   `;
 }
 
-/**
- * 初始化滑桿 (依據資料集實際 Min / Max / Step 自適應)
- */
 function initSimulatorSliders() {
   const container = document.getElementById("simulator-sliders-container");
   if (!container) return;
@@ -1708,7 +1757,6 @@ function initSimulatorSliders() {
     container.appendChild(row);
   });
 
-  // 更新模擬器標籤與單位
   const cfg = PROBLEMS[state.currentProblemId] || PROBLEMS.flood;
   const gaugeSub = document.getElementById("sim-gauge-sublabel");
   if (gaugeSub) gaugeSub.innerText = `預估 ${cfg.targetLabel}`;
@@ -1732,9 +1780,6 @@ function getSimulatorCurrentValues() {
   return values;
 }
 
-/**
- * 即時推算預測數值與 95% CI / PI 區間
- */
 function updateSimulatorInference() {
   const model = state.models.mlrSelected || state.models.mlrAll;
   if (!model) return;
@@ -1749,7 +1794,6 @@ function updateSimulatorInference() {
   let piLow = res.piLower;
   let piUp = res.piUpper;
 
-  // 格式化顯示字串
   let displayPred = "";
   let displayCi = "";
   let displayPi = "";
@@ -1783,7 +1827,6 @@ function updateSimulatorInference() {
   const piElem = document.getElementById("sim-pi-range");
   if (piElem) piElem.innerText = displayPi;
 
-  // 更新儀表色相
   const gaugeElem = document.getElementById("gauge-circle-elem");
   if (gaugeElem) {
     let deg = 180;
@@ -1796,7 +1839,6 @@ function updateSimulatorInference() {
     gaugeElem.style.background = `conic-gradient(#06b6d4 0deg, #3b82f6 ${deg}deg, rgba(255, 255, 255, 0.08) ${deg}deg)`;
   }
 
-  // 更新風險 / 等級徽章
   const badgeElem = document.getElementById("sim-risk-badge");
   if (badgeElem) {
     badgeElem.className = "risk-badge";
@@ -1837,12 +1879,7 @@ function updateSimulatorInference() {
   }
 }
 
-/**
- * 套用情境預設設定
- */
 function applyScenarioPreset(presetId) {
-  const cfg = PROBLEMS[state.currentProblemId];
-
   if (state.currentProblemId === "flood") {
     state.features.forEach(feat => {
       let v = 5.0;
@@ -1868,7 +1905,6 @@ function applyScenarioPreset(presetId) {
       if (vals[feat] !== undefined) setSliderVal(feat, vals[feat]);
     });
   } else {
-    // 自訂資料集
     state.features.forEach(feat => {
       const stat = state.featureStats[feat];
       if (!stat) return;
@@ -1898,7 +1934,227 @@ function resetSimulatorSliders() {
 }
 
 // ============================================================
-// 8. 資料預覽表格與報告導出
+// 8. Python 高解析圖表總覽與架構介紹動態切換 (Tab 5 修正)
+// ============================================================
+
+function renderGallerySection() {
+  const container = document.getElementById("gallery-content-dynamic") || document.querySelector("#pane-gallery .gallery-grid");
+  if (!container) return;
+
+  const p = state.currentProblemId;
+  const title = document.getElementById("gallery-pane-title");
+  const desc = document.getElementById("gallery-pane-desc");
+
+  if (p === "flood") {
+    if (title) title.innerText = "Python Matplotlib 分析圖表總覽 (CRISP-DM 洪水預測流程)";
+    if (desc) desc.innerText = "針對水文觀測資料集執行 Python 統計分析管道所產製之高解析科學繪圖。點擊任意縮圖即可開啟高解析燈箱檢視。";
+
+    container.innerHTML = `
+      <div class="gallery-grid">
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_1_simple_linear_regression_ci_pi.png" alt="單純線性回歸 95% 信賴區間與預測區間" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 1：單純線性回歸預測圖 (95% CI + 95% PI)</h4>
+            <p class="gallery-desc">展示最佳單一因子散布點、擬合回歸線、淺藍 95% 信賴區間帶與紅色虛線 95% 預測區間。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_2_multiple_linear_regression_ci_pi.png" alt="多元線性回歸排序預測圖" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 2：多元線性回歸排序檢驗圖 (95% CI + 95% PI)</h4>
+            <p class="gallery-desc">依預測值升序排列，展示真實觀測與多元回歸預測值之信賴區間帶與預測區間包絡線。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_3_autoregression_forecast.png" alt="自回歸模型 AR(3) 預測走勢" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 3：自回歸模型 AR(3) 預測走勢與預測區間</h4>
+            <p class="gallery-desc">以歷史時序進行連續多步預測，紫色虛線為點預測，外圍淺紫色為隨步長拓展之 95% 預測帶。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_4_feature_selection.png" alt="特徵選擇 F-Score 評分排行" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 4：特徵選擇 F-Score 統計檢定排行</h4>
+            <p class="gallery-desc">依 F-Statistic 由大至小排序，標示入選 Top 10 之關鍵環境因子。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_5_residuals_diagnostics.png" alt="殘差診斷圖" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 5：回歸殘差診斷與常態性檢定</h4>
+            <p class="gallery-desc">左圖檢驗殘差對擬合值的獨立與同質變異；右圖檢驗殘差常態分佈假設與偏態。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_model_comparison.png" alt="模型評估指標綜合對比" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 6：多元模型評估指標綜合對比</h4>
+            <p class="gallery-desc">橫向對比各回歸模型之 RMSE、MAE 誤差大小與 R² 決定係數優劣。</p>
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (p === "swiss") {
+    if (title) title.innerText = "Python Matplotlib 分析圖表總覽 (Kaggle 瑞士房價競賽)";
+    if (desc) desc.innerText = "針對瑞士房價資料集 (i3-ml-21-22-mini-project) 產製之房產科學回歸圖表。點擊任意縮圖即可開啟高解析燈箱檢視。";
+
+    container.innerHTML = `
+      <!-- Swiss Housing Kaggle Feature Card -->
+      <div class="card glass-panel" style="margin-bottom: 24px; border-left: 4px solid #38bdf8;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;">
+          <div>
+            <h3 style="font-size: 17px; font-weight: 700; color: #38bdf8; margin-bottom: 6px;">
+              🏔️ Kaggle Competition: Swiss Housing Price Prediction (i3-ml-21-22-mini-project)
+            </h3>
+            <p style="color: var(--text-muted); font-size: 13.5px; max-width: 900px; line-height: 1.6;">
+              本資料集涵蓋瑞士各大城鎮之房屋與公寓觀測值，透過 11 項關鍵房產指標（居住面積 <code>LivingSpace</code>、房間數 <code>Rooms</code>、衛浴數 <code>Bathrooms</code>、樓層 <code>Floor</code>、屋齡 <code>YearBuilt</code>、市中心距離 <code>DistanceCityCenter</code>、陽台 <code>HasBalcony</code>、停車位 <code>ParkingSpaces</code>、山景指數 <code>MountainViewScore</code>、能源評級 <code>EnergyEfficiency</code>、稅率係數 <code>TaxMultiplier</code>）建立多元線性回歸模型，精準估算瑞士法郎售價 <code>PriceCHF</code>。
+            </p>
+          </div>
+          <a href="https://www.kaggle.com/competitions/i3-ml-21-22-mini-project" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
+            🔗 開啟 Kaggle 競賽專頁
+          </a>
+        </div>
+      </div>
+
+      <div class="gallery-grid">
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_swiss_1_living_space_ci_pi.png" alt="瑞士房價 vs 居住面積 95% CI 與 PI" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 1：瑞士房價 vs 居住面積單純回歸 (95% CI/PI)</h4>
+            <p class="gallery-desc">展示居住面積 (m²) 與瑞士法郎售價之 OLS 線性擬合、信賴帶及預測區間邊界。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_swiss_2_multiple_linear_regression_ci_pi.png" alt="瑞士房價多元回歸排序包絡線" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 2：瑞士房價多元回歸排序包絡線 (95% CI/PI)</h4>
+            <p class="gallery-desc">全 11 特徵模型排序預測帶，展現模型在不同價位區間的估計精度與個別樣本波動。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_swiss_3_autoregression_forecast.png" alt="瑞士房價時序自回歸 AR(3) 走勢外推" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 3：瑞士房價時序自回歸模型 AR(3) 外推預測</h4>
+            <p class="gallery-desc">運用歷史房屋成交序列推估後續價格波動趨勢與擴展預測帶。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_swiss_4_feature_selection.png" alt="瑞士房產特徵重要性 F-score 檢定" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 4：瑞士房產特徵 F-Statistic 統計檢定排行</h4>
+            <p class="gallery-desc">檢驗各房產因子對房價的統計顯著性，面積、房間數與市中心距離為最關鍵指標。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_swiss_5_residuals_diagnostics.png" alt="瑞士房價回歸殘差診斷與常態性" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 5：瑞士房價回歸殘差診斷與常態性假設</h4>
+            <p class="gallery-desc">檢定殘差同質變異與常態分佈鐘形曲線，確認模型假設符合高斯-馬可夫定理。</p>
+          </div>
+        </div>
+
+        <div class="gallery-card glass-panel">
+          <div class="gallery-img-wrap">
+            <img src="plot_swiss_model_comparison.png" alt="瑞士房價各模型評估指標綜合對比" class="gallery-img" onclick="openLightbox(this.src)">
+          </div>
+          <div class="gallery-info">
+            <h4 class="gallery-title">圖 6：瑞士房價各回歸模型評估指標綜合對比</h4>
+            <p class="gallery-desc">橫向對比單純回歸與多元回歸之 RMSE 誤差降低幅度與 R² 決定係數表現。</p>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    // 自訂資料集
+    if (title) title.innerText = "自訂資料集回歸分析架構與統計總覽";
+    if (desc) desc.innerText = `已成功解析外部資料集，目標變數為 [${state.target}]，包含 ${state.features.length} 項自變數特徵。`;
+
+    container.innerHTML = `
+      <div class="card glass-panel" style="margin-bottom: 20px;">
+        <h3 style="font-size: 16px; font-weight: 700; color: #38bdf8; margin-bottom: 8px;">
+          📊 資料集結構特徵與回歸方程
+        </h3>
+        <p style="color: var(--text-muted); font-size: 13.5px; line-height: 1.6;">
+          本自訂資料集共有 <strong>${state.dataset.length.toLocaleString()}</strong> 筆觀測樣本。目標變數為 <code>${state.target}</code>。
+          系統已自動運用 OLS 普通最小平方法完成擬合：
+        </p>
+        <div style="background: rgba(8, 12, 22, 0.8); padding: 14px 18px; border-radius: 8px; margin: 12px 0; font-family: monospace; color: #38bdf8; font-size: 13px;">
+          \\hat{Y} = \\beta_0 + \\sum_{i=1}^{p} \\beta_i X_i
+        </div>
+      </div>
+      <div class="two-column-layout">
+        <div class="card glass-panel">
+          <h4 style="font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 12px;">Top 特徵相關度與權重</h4>
+          <div class="table-responsive">
+            <table class="evaluation-table">
+              <thead>
+                <tr>
+                  <th>特徵名稱</th>
+                  <th>F-score 統計量</th>
+                  <th>平均值</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${state.features.slice(0, 10).map(f => `
+                  <tr>
+                    <td><strong>${f}</strong></td>
+                    <td>${(state.featureScores[f] || 0).toFixed(2)}</td>
+                    <td>${(state.featureStats[f]?.mean || 0).toFixed(2)}</td>
+                    <td><span class="${state.selectedFeatures.includes(f) ? 'eval-tag-best' : 'eval-tag-normal'}">${state.selectedFeatures.includes(f) ? '已入選' : '候選'}</span></td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card glass-panel">
+          <h4 style="font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 12px;">模型推論信心度與區間設定</h4>
+          <p style="color: var(--text-muted); font-size: 13.5px; line-height: 1.6;">
+            已為此資料集動態推導出自由度為 <strong>df = ${Math.max(1, state.trainData.length - state.features.length - 1)}</strong> 之臨界值 $t_{0.025} = ${(state.models.mlrAll?.tCritical || 1.96).toFixed(2)}$。<br><br>
+            信賴區間標準誤：$SE_{mean} = s \\sqrt{x_0 (X^T X)^{-1} x_0^T}$<br>
+            預測區間標準誤：$SE_{pred} = s \\sqrt{1 + x_0 (X^T X)^{-1} x_0^T}$
+          </p>
+        </div>
+      </div>
+    `;
+  }
+}
+
+// ============================================================
+// 9. 資料檢視與自訂 CSV 上傳
 // ============================================================
 
 function renderDataTable(query = "") {
@@ -1993,6 +2249,7 @@ function switchTab(tabId) {
   if (tabId === "plots") setTimeout(renderActivePlot, 60);
   else if (tabId === "features") setTimeout(renderFeatureRankChart, 60);
   else if (tabId === "models") setTimeout(renderEvaluationCharts, 60);
+  else if (tabId === "gallery") setTimeout(renderGallerySection, 60);
 }
 
 // Lightbox
@@ -2011,7 +2268,7 @@ function closeLightbox() {
 }
 
 // ============================================================
-// 9. 本地合成資料備援 (Synthetic Generators)
+// 10. 本地合成資料備援 (Synthetic Generators)
 // ============================================================
 
 function generateLocalFloodSyntheticData(count = 400) {
@@ -2086,7 +2343,7 @@ function generateLocalSwissSyntheticData(count = 500) {
 }
 
 // ============================================================
-// 10. 矩陣運算核心演算法 (Matrix Math Engine)
+// 11. 矩陣運算核心演算法 (Matrix Math Engine)
 // ============================================================
 
 function mean(arr) {
