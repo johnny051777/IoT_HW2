@@ -110,14 +110,14 @@ $$s = \sqrt{\frac{\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{n - p}}$$
 ### 2. 95% 信賴區間 (Confidence Interval, CI)
 信賴區間用於估計在特定特徵輸入向量 $x_0$ 下，**母體平均期望值** $E[y|x_0]$ 的不確定性範圍：
 
-$$CI_{95\%} = \hat{y}_0 \pm t_{n-p, \, 1-\alpha/2} \cdot s \sqrt{x_0 (X^T X)^{-1} x_0^T}$$
+$$CI_{95\%} = \hat{y}_0 \pm t_{n-p, 1-\alpha/2} \cdot s \sqrt{x_0 (X^T X)^{-1} x_0^T}$$
 
 * 幾何意義：當特徵接近訓練樣本中心（Centroid）時，$x_0 (X^T X)^{-1} x_0^T$ 最小，CI 最窄；偏離中心時 CI 呈雙曲線喇叭狀擴張。
 
 ### 3. 95% 預測區間 (Prediction Interval, PI)
 預測區間用於估計在給定特徵 $x_0$ 下，**單一全新觀測樣本** $y_0^{new}$ 的可能落點範圍，必須同時納入模型估計誤差與隨機噪音項 $\varepsilon_0$：
 
-$$PI_{95\%} = \hat{y}_0 \pm t_{n-p, \, 1-\alpha/2} \cdot s \sqrt{1 + x_0 (X^T X)^{-1} x_0^T}$$
+$$PI_{95\%} = \hat{y}_0 \pm t_{n-p, 1-\alpha/2} \cdot s \sqrt{1 + x_0 (X^T X)^{-1} x_0^T}$$
 
 * 關係結論：由於額外增加了個別樣本隨機誤差變異數 $\sigma^2$（即根號內的 $+1$ 項），在相同顯著水準下，**預測區間 (PI) 恆寬於信賴區間 (CI)**。
 
